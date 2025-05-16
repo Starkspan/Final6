@@ -23,7 +23,16 @@ app.post("/pdf/analyze", upload.single("pdf"), async (req, res) => {
 
     const teilname = extract(/(Greiferhalter[^\s]+)/i) || extract(/Benennung\s*[:=]?\s*([\w\- ]+)/i, "k.A.");
     const zeichnung = extract(/(\b[A-Z]{2,}\d{3,}\b)/i) || extract(/Zeichnungsnummer\s*[:=]?\s*(\w+)/i, "k.A.");
-    const material = extract(/1\.[0-9]{4}/) || extract(/Material\s*[:=]?\s*([\w\.\-]+)/i, "stahl");
+    
+let material = extract(/Material\s*[:=]?\s*([\w\.\-\/ ]+)/i)
+            || extract(/Werkstoff\s*[:=]?\s*([\w\.\-\/ ]+)/i)
+            || extract(/(1\.[0-9]{4})/)
+            || extract(/(3\.[0-9]{4})/)
+            || "stahl";
+if (material.includes("3.4365") || material.toLowerCase().includes("aluminium")) {
+  material = "aluminium";
+}
+
     const gewichtMatch = extract(/(\d+[\.,]?\d*)\s?kg/i, null);
     const gewicht = gewichtMatch ? parseFloat(gewichtMatch.replace(",", ".")) : null;
 
@@ -41,7 +50,10 @@ app.post("/pdf/analyze", upload.single("pdf"), async (req, res) => {
       const radius = d / 2;
       const volumen = Math.PI * radius * radius * l / 1000;
       masse = `Ø${d} × ${l} mm`;
-      gewichtCalc = gewichtCalc || volumen * 7.85;
+      
+const dichte = material.toLowerCase().includes("aluminium") ? 2.7 : 7.85;
+gewichtCalc = gewichtCalc || volumen * dichte;
+
       x1 = d;
       x2 = l;
       form = "Zylinder";
@@ -50,7 +62,10 @@ app.post("/pdf/analyze", upload.single("pdf"), async (req, res) => {
       const [a, b, c] = [parseFloat(m[1]), parseFloat(m[2]), parseFloat(m[3])];
       masse = `${a} x ${b} x ${c} mm`;
       const volumen = (a / 1000) * (b / 1000) * (c / 1000);
-      gewichtCalc = gewichtCalc || volumen * 7.85;
+      
+const dichte = material.toLowerCase().includes("aluminium") ? 2.7 : 7.85;
+gewichtCalc = gewichtCalc || volumen * dichte;
+
       x1 = a; x2 = b; x3 = c;
       form = "Platte";
     }
