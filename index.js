@@ -12,112 +12,38 @@ app.use(express.json());
 
 app.post('/pdf/analyze', upload.single('pdf'), async (req, res) => {
   try {
-    const buffer = req.file.buffer;
-    const pdfData = await pdf(buffer);
-    const text = pdfData.text.replace(/\n/g, ' '); // bessere Durchsuchbarkeit
+    const dataBuffer = req.file.buffer;
+    const pdfData = await pdf(dataBuffer);
+    const text = pdfData.text.replace(/\n/g, ' ');
 
-    // Gewicht erkennen
-    const gewichtMatch = text.match(/(\d+[\.,]?\d*)\s?(kg)/i);
-    let gewicht = gewichtMatch ? parseFloat(gewichtMatch[1].replace(",", ".")) : null;
-
-    // Ø- und Länge-Erkennung robuster
-    const durchmesserMatch = text.match(/(?:Ø|D=|d=)?\s*(\d{1,3}[\.,]?\d*)\s*(mm)?/i);
-    const laengeMatch = text.match(/(?:L=|L\s*)?(\d{1,4}[\.,]\d+)/i);
-
-    const durchmesser = durchmesserMatch ? parseFloat(durchmesserMatch[1].replace(",", ".")) : null;
-    const laenge = laengeMatch ? parseFloat(laengeMatch[1].replace(",", ".")) : null;
-
-    if (!durchmesser || !laenge) {
-      return res.json({ hinweis: "Maße nicht klar als Ø oder Länge erkennbar – bitte manuell prüfen" });
+    function extract(pattern, fallback = null) {
+      const match = text.match(pattern);
+      return match ? match[1].trim() : fallback;
     }
 
-    const form = "Zylinder";
-    const x1 = durchmesser;
-    const x2 = laenge;
-    const x3 = 0;
-
-    // Materiallogik
-    const textLower = text.toLowerCase();
-    let material = 'stahl';
-    if (textLower.includes('alu') || textLower.includes('6082')) material = 'aluminium';
-    else if (textLower.includes('edelstahl') || textLower.includes('1.4301')) material = 'edelstahl';
-    else if (textLower.includes('messing') || textLower.includes('ms58')) material = 'messing';
-    else if (textLower.includes('kupfer')) material = 'kupfer';
-
-    const dichten = {
-      aluminium: 2.7,
-      edelstahl: 7.9,
-      stahl: 7.85,
-      messing: 8.4,
-      kupfer: 8.9
-    };
-    const kgPreise = {
-      aluminium: 7,
-      edelstahl: 6.5,
-      stahl: 1.5,
-      messing: 8,
-      kupfer: 10
-    };
-
-    if (!gewicht) {
-      const radius = durchmesser / 2;
-      const volumen = Math.PI * radius * radius * laenge / 1000;
-      gewicht = volumen * dichten[material];
-    }
-
-    if (gewicht > 50 && Math.max(x1, x2) > 100) {
-      return res.json({
-        form,
-        x1, x2, x3,
-        material,
-        gewicht: gewicht.toFixed(2),
-        hinweis: "Bauteil zu groß – bitte manuell prüfen"
-      });
-    }
-
-    const stueckzahl = parseInt(req.body.stueckzahl) || 1;
-    const zielpreis = req.body.zielpreis || null;
-
-    const materialkosten = gewicht * kgPreise[material];
-    const laufzeit_min = gewicht * 2;
-    const laufzeit_std = laufzeit_min / 60;
-    const bearbeitungskosten = laufzeit_std * 35;
-    const ruestkosten = 60;
-    const programmierkosten = 30;
-    const grundkosten = ruestkosten + programmierkosten;
-    const einzelpreis_roh = (materialkosten + bearbeitungskosten + grundkosten) / stueckzahl;
-    const einzelpreis_final = einzelpreis_roh * 1.15;
-
-    if (einzelpreis_final > 10000) {
-      return res.json({
-        form,
-        x1, x2, x3,
-        material,
-        gewicht: gewicht.toFixed(2),
-        preis: einzelpreis_final.toFixed(2),
-        hinweis: "Preis zu hoch – bitte manuell prüfen"
-      });
-    }
+    const teilname = extract(/Benennung\s*[:=]?\s*([\w\- ]+)/i, "k.A.");
+    const zeichnung = extract(/Zeichnungsnummer\s*[:=]?\s*(\w+)/i, "k.A.") || extract(/(A\d{6,})/, "k.A.");
+    const gewicht = extract(/(?:Gewicht|Masse)\s*[:=]?\s*(\d+[\.,]?\d*)\s?kg/i, "k.A.");
+    const material = extract(/Material\s*[:=]?\s*([\w\.\-]+)/i, "k.A.");
+    const firma = extract(/(Firma\s*[:=]?\s*[\w\- ]+|Lauten)/i, "k.A.");
+    const durchmesser = extract(/Ø\s*(\d+[\.,]?\d*)/, null);
+    const laenge = extract(/L(?:=|\s)?(\d+[\.,]?\d*)/, null);
+    const masse = (durchmesser && laenge) ? `Ø${durchmesser} × ${laenge} mm` : "nicht sicher erkannt";
 
     res.json({
-      form,
+      teilname,
+      zeichnung,
       material,
-      x1,
-      x2,
-      x3,
-      gewicht: gewicht.toFixed(3),
-      laufzeit_min: laufzeit_min.toFixed(1),
-      materialkosten: materialkosten.toFixed(2),
-      einzelpreis_final: einzelpreis_final.toFixed(2),
-      zielpreis,
-      stueckzahl
+      gewicht: gewicht ? gewicht.replace(",", ".") + " kg" : "k.A.",
+      masse,
+      firma
     });
   } catch (err) {
-    console.error(err);
+    console.error("Analysefehler:", err);
     res.status(500).json({ error: 'Fehler bei der Analyse' });
   }
 });
 
 app.listen(port, () => {
-  console.log(`✅ Server läuft auf Port ${port}`);
+  console.log("✅ Backend Zeichnungserkennung läuft auf Port " + port);
 });
