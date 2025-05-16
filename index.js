@@ -49,7 +49,7 @@ app.post("/pdf/analyze", upload.single("pdf"), async (req, res) => {
       const m = text.match(/(\d{2,4})\s?[xX*]\s?(\d{2,4})\s?[xX*]\s?(\d{2,4})/);
       const [a, b, c] = [parseFloat(m[1]), parseFloat(m[2]), parseFloat(m[3])];
       masse = `${a} x ${b} x ${c} mm`;
-      const volumen = (a * b * c) / 1000;
+      const volumen = (a / 1000) * (b / 1000) * (c / 1000);
       gewichtCalc = gewichtCalc || volumen * 7.85;
       x1 = a; x2 = b; x3 = c;
       form = "Platte";

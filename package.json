@@ -1,7 +1,7 @@
 
 {
-  "name": "zeichnungsanalyse-preis-v2",
-  "version": "1.0.1",
+  "name": "zeichnungsanalyse-preis-v3",
+  "version": "1.0.2",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
