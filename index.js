@@ -14,21 +14,21 @@ app.post('/pdf/analyze', upload.single('pdf'), async (req, res) => {
   try {
     const buffer = req.file.buffer;
     const pdfData = await pdf(buffer);
-    const text = pdfData.text;
+    const text = pdfData.text.replace(/\n/g, ' '); // bessere Durchsuchbarkeit
 
-    // Gewicht erkennen aus z. B. "0.006 kg"
+    // Gewicht erkennen
     const gewichtMatch = text.match(/(\d+[\.,]?\d*)\s?(kg)/i);
     let gewicht = gewichtMatch ? parseFloat(gewichtMatch[1].replace(",", ".")) : null;
 
-    // Maße mit Ø oder mm gezielt extrahieren
-    const oMatch = text.match(/Ø\s?(\d+[\.,]?\d*)/);
-    const lMatch = text.match(/(\d+[\.,]?\d*)\s?(mm)/i);
+    // Ø- und Länge-Erkennung robuster
+    const durchmesserMatch = text.match(/(?:Ø|D=|d=)?\s*(\d{1,3}[\.,]?\d*)\s*(mm)?/i);
+    const laengeMatch = text.match(/(?:L=|L\s*)?(\d{1,4}[\.,]\d+)/i);
 
-    const durchmesser = oMatch ? parseFloat(oMatch[1].replace(",", ".")) : null;
-    const laenge = lMatch ? parseFloat(lMatch[1].replace(",", ".")) : null;
+    const durchmesser = durchmesserMatch ? parseFloat(durchmesserMatch[1].replace(",", ".")) : null;
+    const laenge = laengeMatch ? parseFloat(laengeMatch[1].replace(",", ".")) : null;
 
     if (!durchmesser || !laenge) {
-      return res.json({ hinweis: "Maße nicht klar als Ø oder mm erkennbar – bitte manuell prüfen" });
+      return res.json({ hinweis: "Maße nicht klar als Ø oder Länge erkennbar – bitte manuell prüfen" });
     }
 
     const form = "Zylinder";
