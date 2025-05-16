@@ -1,8 +1,8 @@
 
-const express = require('express');
-const multer = require('multer');
-const cors = require('cors');
-const pdf = require('pdf-parse');
+const express = require("express");
+const multer = require("multer");
+const cors = require("cors");
+const pdf = require("pdf-parse");
 const app = express();
 const port = process.env.PORT || 10000;
 const upload = multer();
@@ -10,40 +10,90 @@ const upload = multer();
 app.use(cors());
 app.use(express.json());
 
-app.post('/pdf/analyze', upload.single('pdf'), async (req, res) => {
+app.post("/pdf/analyze", upload.single("pdf"), async (req, res) => {
   try {
     const dataBuffer = req.file.buffer;
     const pdfData = await pdf(dataBuffer);
-    const text = pdfData.text.replace(/\n/g, ' ');
+    const text = pdfData.text.replace(/\n/g, " ");
 
     function extract(pattern, fallback = null) {
       const match = text.match(pattern);
       return match ? match[1].trim() : fallback;
     }
 
-    const teilname = extract(/Benennung\s*[:=]?\s*([\w\- ]+)/i, "k.A.");
-    const zeichnung = extract(/Zeichnungsnummer\s*[:=]?\s*(\w+)/i, "k.A.") || extract(/(A\d{6,})/, "k.A.");
-    const gewicht = extract(/(?:Gewicht|Masse)\s*[:=]?\s*(\d+[\.,]?\d*)\s?kg/i, "k.A.");
-    const material = extract(/Material\s*[:=]?\s*([\w\.\-]+)/i, "k.A.");
-    const firma = extract(/(Firma\s*[:=]?\s*[\w\- ]+|Lauten)/i, "k.A.");
-    const durchmesser = extract(/Ø\s*(\d+[\.,]?\d*)/, null);
+    const teilname = extract(/(Greiferhalter[^\s]+)/i) || extract(/Benennung\s*[:=]?\s*([\w\- ]+)/i, "k.A.");
+    const zeichnung = extract(/(\b[A-Z]{2,}\d{3,}\b)/i) || extract(/Zeichnungsnummer\s*[:=]?\s*(\w+)/i, "k.A.");
+    const material = extract(/1\.[0-9]{4}/) || extract(/Material\s*[:=]?\s*([\w\.\-]+)/i, "stahl");
+    const gewichtMatch = extract(/(\d+[\.,]?\d*)\s?kg/i, null);
+    const gewicht = gewichtMatch ? parseFloat(gewichtMatch.replace(",", ".")) : null;
+
+    const durchmesser = extract(/Ø\s?(\d+[\.,]?\d*)/, null);
     const laenge = extract(/L(?:=|\s)?(\d+[\.,]?\d*)/, null);
-    const masse = (durchmesser && laenge) ? `Ø${durchmesser} × ${laenge} mm` : "nicht sicher erkannt";
+    const breite = extract(/(\d{2,4})\s?[xX*]\s?(\d{2,4})\s?[xX*]\s?(\d{2,4})/, null);
+
+    let masse = "nicht sicher erkannt";
+    let gewichtCalc = gewicht;
+    let x1 = 0, x2 = 0, x3 = 0;
+    let form = "k.A.";
+
+    if (durchmesser && laenge) {
+      const d = parseFloat(durchmesser.replace(",", "."));
+      const l = parseFloat(laenge.replace(",", "."));
+      const radius = d / 2;
+      const volumen = Math.PI * radius * radius * l / 1000;
+      masse = `Ø${d} × ${l} mm`;
+      gewichtCalc = gewichtCalc || volumen * 7.85;
+      x1 = d;
+      x2 = l;
+      form = "Zylinder";
+    } else if (text.match(/(\d{2,4})\s?[xX*]\s?(\d{2,4})\s?[xX*]\s?(\d{2,4})/)) {
+      const m = text.match(/(\d{2,4})\s?[xX*]\s?(\d{2,4})\s?[xX*]\s?(\d{2,4})/);
+      const [a, b, c] = [parseFloat(m[1]), parseFloat(m[2]), parseFloat(m[3])];
+      masse = `${a} x ${b} x ${c} mm`;
+      const volumen = (a * b * c) / 1000;
+      gewichtCalc = gewichtCalc || volumen * 7.85;
+      x1 = a; x2 = b; x3 = c;
+      form = "Platte";
+    }
+
+    const kgPreise = {
+      stahl: 1.5,
+      edelstahl: 6.5,
+      aluminium: 7.0,
+      messing: 8.0,
+      kupfer: 10.0,
+      "1.4301": 6.5,
+      "1.2210": 1.5
+    };
+
+    const matKey = material.toLowerCase();
+    const matpreis = kgPreise[matKey] || 1.5;
+    const rüst = 60;
+    const prog = 30;
+    const laufzeit = gewichtCalc ? gewichtCalc * 2 : 1;
+    const laufzeitStd = laufzeit / 60;
+    const bearbeitung = laufzeitStd * 35;
+    const matkosten = gewichtCalc * matpreis;
+    const stück1 = ((matkosten + bearbeitung + rüst + prog) / 1) * 1.15;
+    const stück10 = ((matkosten + bearbeitung + rüst + prog) / 10) * 1.15;
+    const stück100 = ((matkosten + bearbeitung + rüst + prog) / 100) * 1.15;
 
     res.json({
-      teilname,
-      zeichnung,
-      material,
-      gewicht: gewicht ? gewicht.replace(",", ".") + " kg" : "k.A.",
-      masse,
-      firma
+      teilname, zeichnung, material, form, masse,
+      gewicht: gewichtCalc ? gewichtCalc.toFixed(3) + " kg" : "k.A.",
+      preis: {
+        "1 Stk": stück1.toFixed(2) + " €",
+        "10 Stk": stück10.toFixed(2) + " €",
+        "100 Stk": stück100.toFixed(2) + " €"
+      }
     });
+
   } catch (err) {
-    console.error("Analysefehler:", err);
-    res.status(500).json({ error: 'Fehler bei der Analyse' });
+    console.error(err);
+    res.status(500).json({ error: "Analysefehler" });
   }
 });
 
 app.listen(port, () => {
-  console.log("✅ Backend Zeichnungserkennung läuft auf Port " + port);
+  console.log("✅ Server läuft auf Port " + port);
 });
