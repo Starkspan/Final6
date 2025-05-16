@@ -18,7 +18,7 @@ app.post("/pdf/analyze", upload.single("pdf"), async (req, res) => {
 
     function extract(pattern, fallback = null) {
       const match = text.match(pattern);
-      return match ? match[1].trim() : fallback;
+      return match && match[1] ? match[1].trim() : fallback;
     }
 
     const teilname = extract(/(Greiferhalter[^\s]+)/i) || extract(/Benennung\s*[:=]?\s*([\w\- ]+)/i, "k.A.");
@@ -29,7 +29,6 @@ app.post("/pdf/analyze", upload.single("pdf"), async (req, res) => {
 
     const durchmesser = extract(/Ø\s?(\d+[\.,]?\d*)/, null);
     const laenge = extract(/L(?:=|\s)?(\d+[\.,]?\d*)/, null);
-    const breite = extract(/(\d{2,4})\s?[xX*]\s?(\d{2,4})\s?[xX*]\s?(\d{2,4})/, null);
 
     let masse = "nicht sicher erkannt";
     let gewichtCalc = gewicht;
